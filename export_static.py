@@ -2,11 +2,11 @@
 """
 4단계(정적 배포용): 서버 없이 브라우저에서 유사도를 계산할 수 있게 데이터를 압축한다.
 
-  python export_static.py --data data --out site/data --max-nouns 60000 --dims 128
+  python export_static.py --data data --out site/data --max-nouns 60000 --dims 300
 
 - 입력 허용 명사를 빈도 상위 --max-nouns개로 줄인다(정답 후보는 항상 포함).
 - PCA로 --dims 차원까지 줄이고, 행마다 정규화한 뒤 int8로 양자화한다.
-  60,000개 × 128차원이면 vectors.bin은 약 7.7MB.
+  실측(명사 41,934개): 300차원 12.6MB, 상위 1000위 96.6% 일치 / 128차원 5.4MB, 62.7% 일치.
 - 결과물
     words.txt    명사 목록 (줄바꿈 구분, vectors.bin 행 순서와 같음)
     vectors.bin  int8, 행 우선 (N × dims)
@@ -26,7 +26,7 @@ def main():
     ap.add_argument("--data", default="data")
     ap.add_argument("--out", default="site/data")
     ap.add_argument("--max-nouns", type=int, default=60_000)
-    ap.add_argument("--dims", type=int, default=128, help="300이면 PCA를 건너뜀")
+    ap.add_argument("--dims", type=int, default=300, help="300이면 PCA를 건너뜀(권장)")
     ap.add_argument("--salt", default=None, help="오늘의 단어 순서를 정하는 값(기본: 무작위)")
     args = ap.parse_args()
 

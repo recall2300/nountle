@@ -37,7 +37,7 @@ DATA_DIR=data DAILY_SALT=비밀문자열 uvicorn server:app --host 0.0.0.0 --por
 
 ## 5. GitHub Pages 배포 (서버 없이)
 `main`에 푸시하면 GitHub Actions가 벡터 다운로드부터 Pages 배포까지 알아서 처리합니다(`.github/workflows/pages.yml`).
-Pages에서는 유사도를 브라우저가 직접 계산합니다(`export_static.py`로 PCA와 int8 압축, 약 8MB).
+Pages에서는 유사도를 브라우저가 직접 계산합니다(`export_static.py`로 int8 압축, 약 13MB. 첫 접속 때 한 번 받고 이후엔 브라우저 캐시 사용).
 
 처음 한 번만 설정하면 됩니다.
 1. **Settings → General**에서 저장소를 Public으로 바꿉니다(무료 플랜 기준).

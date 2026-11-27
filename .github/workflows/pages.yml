@@ -19,7 +19,7 @@ env:
   VOCAB_FILE: resources/vocab.tsv   # 국립국어원 「한국어 학습용 어휘 목록」 (fetch-vocab.yml이 만듦)
   MAX_WORDS: "400000"               # FastText에서 훑을 상위 단어 수
   MAX_NOUNS: "60000"                # 사이트에 올릴 명사 수
-  DIMS: "128"                       # 압축 차원 (300이면 압축 안 함)
+  DIMS: "300"                       # PCA 차원 (300이면 PCA 없이 int8만; 128은 순위가 ~40% 바뀜)
 
 jobs:
   build:
