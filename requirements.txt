@@ -1,0 +1,7 @@
+kiwipiepy
+numpy
+pandas
+xlrd
+openpyxl
+fastapi
+uvicorn

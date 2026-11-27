@@ -1,0 +1,9 @@
+# 생성되는 데이터와 원본 자료 (용량·라이선스 문제로 커밋하지 않음)
+data/
+*.vec
+*.vec.gz
+*.bin
+*.xls
+*.xlsx
+__pycache__/
+.venv/
