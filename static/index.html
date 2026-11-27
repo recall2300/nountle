@@ -51,6 +51,20 @@
   .hint { color: var(--muted); font-size: 14px; margin: 0 0 16px; min-height: 1.6em; }
   .hint b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+  /* 글자 힌트: 원고지 칸에 글자 수, 빨간 펜으로 초성 */
+  .letters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: -4px 0 18px; font-size: 14px; color: var(--muted); }
+  .letters[hidden] { display: none; }
+  .cells { display: flex; }
+  .cells span {
+    width: 2em; height: 2em; display: grid; place-items: center;
+    border: 1px solid var(--grid); margin-left: -1px; background: #fff;
+    font: 700 18px/1 var(--serif); color: var(--pen);
+  }
+  .cells span:first-child { margin-left: 0; }
+  @keyframes open { from { background: var(--pen-soft); } to { background: #fff; } }
+  .letters.opened .cells span { animation: open 1.2s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .letters.opened .cells span { animation: none; } }
+
   /* 세션 패널 */
   .session { display: none; font-size: 14px; margin-bottom: 16px; gap: 8px 16px; flex-wrap: wrap; align-items: center; }
   .session.on { display: flex; }
@@ -168,6 +182,7 @@
   </div>
 
   <p class="hint" id="hint"></p>
+  <div class="letters" id="letters" hidden></div>
 
   <form class="guess" id="guess">
     <input class="sheet" id="word" maxlength="8" placeholder="명사" autocomplete="off"
@@ -203,6 +218,13 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const TOP_N = 1000;
+const HINT_LENGTH_AT = 100;   // 이 횟수만큼 추측하면 글자 수 공개
+const HINT_INITIALS_AT = 200; // 이 횟수만큼 추측하면 초성 공개
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const initialsOf = (w) => [...w].map((ch) => {
+  const c = ch.charCodeAt(0) - 0xAC00;
+  return c >= 0 && c < 11172 ? CHO[Math.floor(c / 588)] : ch;
+}).join("");
 const store = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -222,6 +244,7 @@ const serverEngine = {
   async hint(ctx) { return api(`${this.base(ctx)}/hint`); },
   async guess(ctx, w) { return api(`${this.base(ctx)}/guess?word=${encodeURIComponent(w)}`); },
   async giveup(ctx) { return api(`${this.base(ctx)}/giveup`); },
+  async letters(ctx) { return api(`${this.base(ctx)}/letters`); },
   async newSession() { return (await api("api/session", { method: "POST" })).session_id; },
   async sessionGuesses(ctx) { return (await api(`${this.base(ctx)}/guesses`)).guesses; },
 };
@@ -283,6 +306,7 @@ function makeLocalEngine(meta, words, vecs) {
       const a = answerOf(ctx); const { sims, top } = ranking(a);
       return { answer: words[a], top: top.slice(1, 101).map((i, k) => ({ rank: k + 1, word: words[i], similarity: score(sims[i]) })) };
     },
+    async letters(ctx) { const w = words[answerOf(ctx)]; return { length: [...w].length, initials: initialsOf(w) }; },
     async newSession() { return Math.random().toString(36).slice(2, 10); },
     async sessionGuesses() { return []; },
   };
@@ -399,6 +423,36 @@ function render(flash) {
   } else {
     $("top").classList.remove("on");
   }
+  renderLetters(flash && (list.length === HINT_LENGTH_AT || list.length === HINT_INITIALS_AT));
+}
+
+async function renderLetters(justOpened) {
+  const box = $("letters");
+  const n = state.guesses.size;
+  box.hidden = state.solved || state.gaveUp || !engine;
+  if (box.hidden) return;
+  box.classList.toggle("opened", !!justOpened);
+  if (n < HINT_LENGTH_AT) {
+    box.replaceChildren(`${HINT_LENGTH_AT}번째 추측부터 글자 수를 알려 드려요. 앞으로 ${HINT_LENGTH_AT - n}번.`);
+    return;
+  }
+  if (!state.letters) {
+    try { state.letters = await engine.letters(ctx()); } catch (e) { box.replaceChildren(e.message); return; }
+  }
+  const { length, initials } = state.letters;
+  const showInitials = n >= HINT_INITIALS_AT;
+  const cells = document.createElement("div");
+  cells.className = "cells";
+  cells.setAttribute("aria-label", showInitials ? `초성 ${[...initials].join(" ")}` : `${length}글자`);
+  for (let i = 0; i < length; i++) {
+    const c = document.createElement("span");
+    c.textContent = showInitials ? [...initials][i] : "";
+    cells.append(c);
+  }
+  const note = showInitials
+    ? `${length}글자, 초성까지 열렸어요.`
+    : `${length}글자예요. ${HINT_INITIALS_AT}번째 추측부터 초성도 보여 드려요. 앞으로 ${HINT_INITIALS_AT - n}번.`;
+  box.replaceChildren(cells, note);
 }
 
 /* ---------- 동작 ---------- */
@@ -416,7 +470,7 @@ async function loadHint() {
 
 function reset(mode, sid) {
   stopPoll();
-  state = { ...state, mode, sid, guesses: new Map(), latest: null, solved: false, gaveUp: false, answer: null };
+  state = { ...state, mode, sid, guesses: new Map(), latest: null, solved: false, gaveUp: false, answer: null, letters: null };
   $("topList").replaceChildren();
 }
 

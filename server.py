@@ -9,6 +9,7 @@
 - 오늘의 단어:  GET  /api/daily/guess?word=사과
                 GET  /api/daily/hint        (1위/10위/1000위 유사도)
                 GET  /api/daily/giveup
+                GET  /api/daily/letters     (글자 수와 초성; 화면에서 100/200번째에 공개)
 - 무제한(꼬오맨틀식): POST /api/session  → {"session_id": ...}
                 GET  /api/session/{sid}/guess?word=사과
                 GET  /api/session/{sid}/hint
@@ -93,6 +94,16 @@ def giveup(answer: str, n: int = 100):
     }
 
 
+CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+
+
+def letters(answer: str):
+    initials = "".join(
+        CHO[(ord(ch) - 0xAC00) // 588] if 0 <= ord(ch) - 0xAC00 < 11172 else ch for ch in answer
+    )
+    return {"length": len(answer), "initials": initials}
+
+
 def get_session(sid: str) -> dict:
     now = time.time()
     for k in [k for k, v in sessions.items() if now - v["created"] > SESSION_TTL]:
@@ -115,6 +126,11 @@ def daily_hint():
 @app.get("/api/daily/giveup")
 def daily_giveup():
     return giveup(daily_answer())
+
+
+@app.get("/api/daily/letters")
+def daily_letters():
+    return letters(daily_answer())
 
 
 @app.post("/api/session")
@@ -143,6 +159,11 @@ def session_guesses(sid: str):
 @app.get("/api/session/{sid}/hint")
 def session_hint(sid: str):
     return hint(get_session(sid)["answer"])
+
+
+@app.get("/api/session/{sid}/letters")
+def session_letters(sid: str):
+    return letters(get_session(sid)["answer"])
 
 
 @app.get("/api/session/{sid}/giveup")
