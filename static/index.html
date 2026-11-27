@@ -27,7 +27,10 @@
     background: var(--paper);
     color: var(--ink);
     font: 16px/1.6 var(--sans);
+    word-break: keep-all;
+    overflow-wrap: anywhere;
   }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   main { max-width: 640px; margin: 0 auto; padding: 28px 18px 64px; }
   button, input { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--grid-strong); outline-offset: 2px; }
@@ -80,42 +83,43 @@
   }
 
   /* 입력: 원고지 */
-  form.guess { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+  form.guess { display: flex; gap: 10px; align-items: stretch; }
   .sheet {
-    --cell: 1.5em;
-    font: 400 clamp(18px, 5.2vw, 26px)/1 var(--serif);
-    width: calc(var(--cell) * 8 + 2px);
-    height: calc(var(--cell) + 2px);
-    padding: 0 0 0 .25em;
-    letter-spacing: .5em;
-    border: 1px solid var(--grid-strong);
-    border-radius: 0;
-    background-color: #fff;
-    background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px);
-    background-size: var(--cell) 100%;
-    background-position: calc(var(--cell) - 1px) 0;
-    outline-offset: 3px;
+    --cells: 6;            /* 명사는 최대 6글자 */
+    --cell: 1.75em;        /* 한글 한 글자(1em) + 좌우 여백 */
+    flex: none;
+    font: 400 clamp(20px, 5.6vw, 24px)/1 var(--serif);
+    width: calc(var(--cell) * var(--cells));
+    height: var(--cell);
+    margin: 1px;
+    padding: 0 0 0 calc((var(--cell) - 1em) / 2);
+    letter-spacing: calc(var(--cell) - 1em);
+    border: 0; border-radius: 0; outline: none;
+    background: #fff repeating-linear-gradient(to right,
+        transparent 0 calc(var(--cell) - 1px), var(--grid) calc(var(--cell) - 1px) var(--cell))
+      0 0 / calc(var(--cell) * (var(--cells) - 1)) 100% no-repeat;
+    box-shadow: 0 0 0 1px var(--grid-strong);
   }
+  .sheet:focus { box-shadow: 0 0 0 2px var(--grid-strong); }
   .sheet::placeholder { color: #B5C4B9; }
   .go {
-    padding: 0 20px; border: 0; border-radius: 2px; cursor: pointer;
-    background: var(--grid-strong); color: #fff; font-weight: 600; min-height: 44px;
+    padding: 0 24px; border: 0; border-radius: 2px; cursor: pointer;
+    background: var(--grid-strong); color: #fff; font-weight: 600;
   }
   .go:disabled { opacity: .5; cursor: default; }
-  .msg { min-height: 1.5em; margin: 6px 0 2px; font-size: 14px; color: var(--pen); }
+  .msg { margin: 8px 0 0; font-size: 14px; color: var(--pen); }
+  .msg:empty { display: none; }
 
   /* 입력칸 + 방금 넣은 단어: 스크롤해도 화면 위에 붙어 있음 (키보드에 안 가려지게) */
   .dock {
     position: sticky; top: 0; z-index: 5;
     background: var(--paper);
-    margin: 0 -18px; padding: 10px 18px 4px;
+    margin: 0 -18px; padding: 10px 18px 0;
   }
-  .dock.stuck { box-shadow: 0 1px 0 var(--grid); }
-  .dock.over { position: static; box-shadow: none; }
+  .dock.over { position: static; }
   .dock .letters { margin: 0 0 10px; }
-  table.last { margin-bottom: 6px; }
-  table.last td { background: #EEF5F0; border-bottom: 1px solid var(--grid-strong); }
-  table.last:empty { display: none; }
+  table.head { margin-top: 14px; }
+  table.head tbody td { background: #EEF5F0; border-bottom: 1px solid var(--grid-strong); }
 
   /* 정답 배너 */
   .done { display: none; margin: 8px 0 16px; padding: 14px 16px; border-left: 3px solid var(--pen); background: var(--pen-soft); }
@@ -124,15 +128,15 @@
   .done .answer { font: 700 22px/1.3 var(--serif); }
 
   /* 추측 표 */
-  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
   th {
     text-align: left; font-weight: 500; font-size: 13px; color: var(--muted);
     padding: 6px 8px; border-bottom: 1px solid var(--grid-strong);
   }
   td { padding: 9px 8px; border-bottom: 1px solid #E3ECE5; vertical-align: middle; }
-  th.n, td.n { width: 3em; color: var(--muted); text-align: right; }
-  th.s, td.s { width: 5.5em; text-align: right; }
-  th.r, td.r { width: 38%; }
+  col.cn { width: 2.6em; } col.cs { width: 5.5em; } col.cr { width: 38%; }
+  th.n, td.n { color: var(--muted); text-align: right; }
+  th.s, td.s { text-align: right; }
   td.w { font: 400 19px/1.3 var(--serif); }
   @keyframes flash { from { background: #D6E8DC; } to { background: transparent; } }
   tr.flash td { animation: flash .9s ease-out; }
@@ -140,7 +144,7 @@
   .rank { display: flex; align-items: center; gap: 8px; font-size: 14px; }
   .rank .bar { flex: 1; height: 4px; background: #EAEFEB; position: relative; }
   .rank .bar i { position: absolute; inset: 0 auto 0 0; background: var(--pen); }
-  .rank .t { width: 4.6em; text-align: right; white-space: nowrap; }
+  .rank .t { flex: none; width: 4.8em; white-space: nowrap; }
   .rank.out { color: var(--muted); }
 
   /* 정답에는 빨간 동그라미 */
@@ -169,10 +173,11 @@
     .title { font-size: 22px; margin-bottom: 14px; }
     .modes { margin-bottom: 12px; }
     .hint { font-size: 13px; margin-bottom: 4px; }
+    .go { flex: 1; padding: 0 12px; }
   }
   @media (max-width: 420px) {
-    th.r, td.r { width: 34%; }
-    .rank .bar { display: none; }
+    col.cr { width: 36%; }
+    .rank .t { width: 4.4em; }
     .top ol { columns: 1; }
   }
   @media (prefers-reduced-motion: reduce) { tr.flash td { animation: none; } }
@@ -199,17 +204,6 @@
   </div>
 
   <p class="hint" id="hint"></p>
-  <div id="sentinel"></div>
-  <div class="dock" id="dock">
-  <div class="letters" id="letters" hidden></div>
-  <form class="guess" id="guess">
-    <input class="sheet" id="word" maxlength="8" placeholder="명사" autocomplete="off"
-           autocapitalize="off" spellcheck="false" aria-label="추측할 명사">
-    <button class="go" id="go" type="submit">추측</button>
-  </form>
-  <p class="msg" id="msg" role="status"></p>
-  <table class="last" aria-label="방금 넣은 단어"><tbody id="lastRow"></tbody></table>
-  </div>
 
   <section class="done" id="done">
     <p id="doneText"></p>
@@ -218,8 +212,24 @@
     <div class="top" id="top"><ol id="topList"></ol></div>
   </section>
 
-  <table>
+  <div id="sentinel"></div>
+  <div class="dock" id="dock">
+  <div class="letters" id="letters" hidden></div>
+  <form class="guess" id="guess">
+    <input class="sheet" id="word" maxlength="6" placeholder="명사" autocomplete="off"
+           autocapitalize="off" spellcheck="false" aria-label="추측할 명사">
+    <button class="go" id="go" type="submit">추측</button>
+  </form>
+  <p class="msg" id="msg" role="status"></p>
+  <table class="head" aria-label="방금 넣은 단어">
+    <colgroup><col class="cn"><col><col class="cs"><col class="cr"></colgroup>
     <thead><tr><th class="n">#</th><th>단어</th><th class="s">유사도</th><th class="r">순위</th></tr></thead>
+    <tbody id="lastRow"></tbody>
+  </table>
+  </div>
+
+  <table aria-label="추측한 단어, 유사도 순 (#, 단어, 유사도, 순위)">
+    <colgroup><col class="cn"><col><col class="cs"><col class="cr"></colgroup>
     <tbody id="rows"></tbody>
   </table>
 
@@ -387,8 +397,9 @@ function rankCell(g) {
     fill.style.width = `${p * 100}%`;
     fill.style.opacity = (0.35 + 0.65 * p).toFixed(2);
     bar.append(fill);
-    wrap.append(bar);
     t.textContent = `${g.rank}위`;
+    wrap.append(t, bar);
+    return wrap;
   } else {
     wrap.classList.add("out"); t.textContent = `${TOP_N}위 밖`;
   }
@@ -581,8 +592,7 @@ $("word").addEventListener("focus", () => setTimeout(dockToTop, 300));
 if (window.visualViewport) visualViewport.addEventListener("resize", () => {
   if (document.activeElement === $("word")) dockToTop();
 });
-new IntersectionObserver(([e]) => $("dock").classList.toggle("stuck", !e.isIntersecting))
-  .observe($("sentinel"));
+
 $("giveup").addEventListener("click", async () => {
   if (!confirm("포기하면 정답이 공개돼요. 포기할까요?")) return;
   try {
