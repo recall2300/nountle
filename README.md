@@ -41,8 +41,7 @@ Pages에서는 유사도를 브라우저가 직접 계산합니다(`export_stati
 
 처음 한 번만 설정하면 됩니다.
 1. **Settings → General**에서 저장소를 Public으로 바꿉니다(무료 플랜 기준).
-2. 국립국어원 누리집 자료실에서 「한국어 학습용 어휘 목록」을 받아 `resources/vocab.xls`로 커밋합니다.
-   `.xlsx` 파일이면 워크플로의 `VOCAB_FILE`도 같이 바꿔 주세요.
+2. 어휘 목록은 `Fetch vocabulary list` 워크플로가 국립국어원에서 받아 `resources/vocab.tsv`로 커밋합니다(공공누리 제1유형).
 3. **Settings → Pages → Source**를 `GitHub Actions`로 바꿉니다.
 4. (선택) **Settings → Secrets → Actions**에 `DAILY_SALT`를 넣으면 오늘의 단어 순서가 바뀝니다.
 

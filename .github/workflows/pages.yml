@@ -16,7 +16,7 @@ concurrency:
 
 env:
   FASTTEXT_URL: https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.ko.300.vec.gz
-  VOCAB_FILE: resources/vocab.xls   # 국립국어원 「한국어 학습용 어휘 목록」
+  VOCAB_FILE: resources/vocab.tsv   # 국립국어원 「한국어 학습용 어휘 목록」 (fetch-vocab.yml이 만듦)
   MAX_WORDS: "400000"               # FastText에서 훑을 상위 단어 수
   MAX_NOUNS: "60000"                # 사이트에 올릴 명사 수
   DIMS: "128"                       # 압축 차원 (300이면 압축 안 함)
@@ -38,7 +38,7 @@ jobs:
       - name: Check vocabulary file
         run: |
           if [ ! -f "$VOCAB_FILE" ]; then
-            echo "::error::$VOCAB_FILE 이 없습니다. 국립국어원 '한국어 학습용 어휘 목록' 파일을 이 이름으로 올려 주세요."
+            echo "::error::$VOCAB_FILE 이 없습니다. Actions에서 Fetch vocabulary list 워크플로를 먼저 실행해 주세요."
             exit 1
           fi
 

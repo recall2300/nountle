@@ -23,12 +23,14 @@ def load_table(path):
     p = str(path)
     if p.endswith(".csv"):
         return pd.read_csv(p)
+    if p.endswith((".tsv", ".txt")):
+        return pd.read_csv(p, sep="\t", dtype=str, keep_default_na=False)
     return pd.read_excel(p, sheet_name=0)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("vocab", help="한국어 학습용 어휘 목록 (.xls/.xlsx/.csv)")
+    ap.add_argument("vocab", help="한국어 학습용 어휘 목록 (.tsv/.xls/.xlsx/.csv)")
     ap.add_argument("--data", default="data")
     ap.add_argument("--min-len", type=int, default=2, help="한 글자 정답은 기본 제외")
     ap.add_argument("--seed", type=int, default=20261127)
