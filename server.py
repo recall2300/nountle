@@ -58,9 +58,10 @@ def score(sim: float) -> float:
 
 
 def daily_answer() -> str:
-    today = dt.datetime.now(KST).date().isoformat()
-    h = int(hashlib.sha256(f"{SALT}:{today}".encode()).hexdigest(), 16)
-    return ANSWERS[h % len(ANSWERS)]
+    # 섞어 둔 정답 목록을 날짜순으로 하나씩 꺼낸다 → 목록을 한 바퀴 돌 때까지 중복 없음
+    day = (dt.datetime.now(KST).date() - dt.date(1970, 1, 1)).days
+    offset = int(hashlib.sha256(SALT.encode()).hexdigest(), 16)
+    return ANSWERS[(day + offset) % len(ANSWERS)]
 
 
 def judge(answer: str, word: str):

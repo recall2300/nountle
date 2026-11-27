@@ -259,7 +259,11 @@ function makeLocalEngine(meta, words, vecs) {
     return r;
   }
   const score = (s) => Math.round(s * 10000) / 100;
-  const answerOf = (ctx) => answers[fnv1a(ctx.mode === "daily" ? `${salt}:${kstDate()}` : `session:${ctx.sid}`) % answers.length];
+  // 오늘의 단어: 섞어 둔 정답 목록을 날짜순으로 하나씩 꺼낸다 → 목록을 한 바퀴 돌 때까지 중복 없음
+  const dayNumber = () => Math.floor(Date.parse(`${kstDate()}T00:00:00Z`) / 86400e3);
+  const answerOf = (ctx) => ctx.mode === "daily"
+    ? answers[(dayNumber() + fnv1a(salt)) % answers.length]
+    : answers[fnv1a(`session:${ctx.sid}`) % answers.length];
 
   return {
     shared: false,
