@@ -1,0 +1,82 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  FASTTEXT_URL: https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.ko.300.vec.gz
+  VOCAB_FILE: resources/vocab.xls   # 국립국어원 「한국어 학습용 어휘 목록」
+  MAX_WORDS: "400000"               # FastText에서 훑을 상위 단어 수
+  MAX_NOUNS: "60000"                # 사이트에 올릴 명사 수
+  DIMS: "128"                       # 압축 차원 (300이면 압축 안 함)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Check vocabulary file
+        run: |
+          if [ ! -f "$VOCAB_FILE" ]; then
+            echo "::error::$VOCAB_FILE 이 없습니다. 국립국어원 '한국어 학습용 어휘 목록' 파일을 이 이름으로 올려 주세요."
+            exit 1
+          fi
+
+      # 명사 추출 결과는 스크립트·어휘 파일·설정이 바뀔 때만 다시 만든다
+      - name: Restore noun data
+        id: nouns
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: nouns-${{ env.MAX_WORDS }}-${{ hashFiles('build_vocab.py', 'build_answers.py', 'resources/**') }}
+
+      - name: Build noun data
+        if: steps.nouns.outputs.cache-hit != 'true'
+        run: |
+          curl -fL --retry 3 -o cc.ko.300.vec.gz "$FASTTEXT_URL"
+          python build_vocab.py cc.ko.300.vec.gz --out data --max-words "$MAX_WORDS"
+          python build_answers.py "$VOCAB_FILE" --data data
+          rm cc.ko.300.vec.gz
+
+      - name: Export static site
+        run: |
+          mkdir -p site
+          cp -r static/. site/
+          python export_static.py --data data --out site/data \
+            --max-nouns "$MAX_NOUNS" --dims "$DIMS" \
+            --salt "${{ secrets.DAILY_SALT || github.repository }}"
+          touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

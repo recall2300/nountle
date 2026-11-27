@@ -4,6 +4,9 @@ data/
 *.vec.gz
 *.bin
 *.xls
+!resources/*.xls
 *.xlsx
+!resources/*.xlsx
 __pycache__/
 .venv/
+site/

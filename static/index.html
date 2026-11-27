@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>명사맨틀</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='30' height='30' fill='%23fff' stroke='%233E7A5A' stroke-width='2'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%2320283A'%3E%EB%AA%85%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" rel="stylesheet">
@@ -59,6 +60,7 @@
     color: var(--grid-strong); text-decoration: underline; text-underline-offset: 3px;
   }
   .join { display: flex; gap: 6px; align-items: center; }
+  .note { flex-basis: 100%; color: var(--muted); font-size: 13px; }
   .join input {
     width: 9em; padding: 4px 8px; border: 1px solid var(--grid); background: #fff; border-radius: 2px;
   }
@@ -129,6 +131,8 @@
   .foot { margin-top: 20px; display: flex; justify-content: space-between; font-size: 14px; }
   .giveup { color: var(--muted); }
 
+  .credit { margin-top: 40px; font-size: 12px; color: var(--muted); }
+  .credit a { color: inherit; }
   .top { display: none; margin-top: 12px; }
   .top.on { display: block; }
   .top ol { columns: 2; column-gap: 24px; padding-left: 2.6em; margin: 8px 0 0; font-size: 15px; }
@@ -160,6 +164,7 @@
       <input id="joinCode" placeholder="친구 코드" autocomplete="off" aria-label="친구의 참여 코드">
       <button class="link" type="submit">참여</button>
     </form>
+    <span class="note" id="sessionNote"></span>
   </div>
 
   <p class="hint" id="hint"></p>
@@ -187,6 +192,12 @@
     <span id="count"></span>
     <button class="link giveup" id="giveup" type="button">포기하고 정답 보기</button>
   </div>
+
+  <p class="credit">
+    <a href="https://semantle-ko.newsjel.ly/">꼬맨틀</a>과 Semantle에서 아이디어를 얻었어요.
+    단어 벡터는 <a href="https://fasttext.cc/docs/en/crawl-vectors.html">fastText</a>(CC BY-SA 3.0),
+    어휘 목록은 국립국어원 「한국어 학습용 어휘 목록」을 썼어요.
+  </p>
 </main>
 
 <script>
@@ -197,12 +208,6 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
-let state = { mode: "daily", sid: null, date: null, guesses: new Map(), latest: null, solved: false, gaveUp: false };
-let pollTimer = null;
-
-const base = () => state.mode === "daily" ? "/api/daily" : `/api/session/${state.sid}`;
-const dailyKey = () => `nountle:daily:${state.date}`;
-
 async function api(path, opts) {
   const res = await fetch(path, opts);
   const body = await res.json().catch(() => ({}));
@@ -210,9 +215,106 @@ async function api(path, opts) {
   return body;
 }
 
-function saveDaily() {
-  if (state.mode !== "daily") return;
-  store.set(dailyKey(), { guesses: [...state.guesses.values()], solved: state.solved, gaveUp: state.gaveUp });
+/* ---------- 엔진 1: 서버 API (NAS) ---------- */
+const serverEngine = {
+  shared: true,
+  base: (ctx) => ctx.mode === "daily" ? "api/daily" : `api/session/${ctx.sid}`,
+  async hint(ctx) { return api(`${this.base(ctx)}/hint`); },
+  async guess(ctx, w) { return api(`${this.base(ctx)}/guess?word=${encodeURIComponent(w)}`); },
+  async giveup(ctx) { return api(`${this.base(ctx)}/giveup`); },
+  async newSession() { return (await api("api/session", { method: "POST" })).session_id; },
+  async sessionGuesses(ctx) { return (await api(`${this.base(ctx)}/guesses`)).guesses; },
+};
+
+/* ---------- 엔진 2: 브라우저 계산 (GitHub Pages) ---------- */
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (const ch of new TextEncoder().encode(str)) { h ^= ch; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h;
+}
+const kstDate = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+
+function makeLocalEngine(meta, words, vecs) {
+  const { n, dims, answers, salt } = meta;
+  const index = new Map(words.map((w, i) => [w, i]));
+  const norms = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0; const o = i * dims;
+    for (let d = 0; d < dims; d++) s += vecs[o + d] * vecs[o + d];
+    norms[i] = Math.sqrt(s) || 1;
+  }
+  const cache = new Map();
+  function ranking(a) {
+    if (cache.has(a)) return cache.get(a);
+    const sims = new Float32Array(n); const oa = a * dims;
+    for (let i = 0; i < n; i++) {
+      let s = 0; const o = i * dims;
+      for (let d = 0; d < dims; d++) s += vecs[o + d] * vecs[oa + d];
+      sims[i] = s / (norms[i] * norms[a]);
+    }
+    const top = Array.from(sims.keys()).sort((x, y) => sims[y] - sims[x]).slice(0, TOP_N + 1);
+    const ranks = new Map(top.map((i, r) => [i, r]));
+    const r = { sims, top, ranks };
+    cache.set(a, r);
+    return r;
+  }
+  const score = (s) => Math.round(s * 10000) / 100;
+  const answerOf = (ctx) => answers[fnv1a(ctx.mode === "daily" ? `${salt}:${kstDate()}` : `session:${ctx.sid}`) % answers.length];
+
+  return {
+    shared: false,
+    async hint(ctx) {
+      const { sims, top } = ranking(answerOf(ctx));
+      const at = (r) => score(sims[top[Math.min(r, top.length - 1)]]);
+      return { date: kstDate(), rank1: at(1), rank10: at(10), [`rank${TOP_N}`]: at(TOP_N) };
+    },
+    async guess(ctx, w) {
+      if (!index.has(w)) throw new Error(`'${w}'은(는) 명사 목록에 없어요.`);
+      const a = answerOf(ctx), i = index.get(w);
+      const { sims, ranks } = ranking(a);
+      const r = ranks.get(i);
+      return { word: w, similarity: score(sims[i]), rank: r ? r : null, correct: i === a };
+    },
+    async giveup(ctx) {
+      const a = answerOf(ctx); const { sims, top } = ranking(a);
+      return { answer: words[a], top: top.slice(1, 101).map((i, k) => ({ rank: k + 1, word: words[i], similarity: score(sims[i]) })) };
+    },
+    async newSession() { return Math.random().toString(36).slice(2, 10); },
+    async sessionGuesses() { return []; },
+  };
+}
+
+async function pickEngine() {
+  try {
+    const res = await fetch("data/meta.json");
+    if (!res.ok) return serverEngine;
+    const meta = await res.json();
+    $("hint").textContent = "단어 목록을 불러오는 중이에요.";
+    const [words, buf] = await Promise.all([
+      fetch("data/words.txt").then((r) => r.text()),
+      fetch("data/vectors.bin").then((r) => r.arrayBuffer()),
+    ]);
+    return makeLocalEngine(meta, words.split("\n"), new Int8Array(buf));
+  } catch { return serverEngine; }
+}
+
+/* ---------- 상태 ---------- */
+let engine = null;
+let state = { mode: "daily", sid: null, date: null, guesses: new Map(), latest: null, solved: false, gaveUp: false, answer: null };
+let pollTimer = null;
+const ctx = () => ({ mode: state.mode, sid: state.sid });
+const saveKey = () => state.mode === "daily" ? `nountle:daily:${state.date}` : `nountle:session:${state.sid}`;
+
+function save() {
+  if (state.mode === "session" && engine.shared) return; // 서버가 기록함
+  store.set(saveKey(), { guesses: [...state.guesses.values()], solved: state.solved, gaveUp: state.gaveUp });
+}
+async function restore() {
+  const saved = store.get(saveKey());
+  if (!saved) return;
+  saved.guesses.forEach(addGuess);
+  state.solved = saved.solved; state.gaveUp = saved.gaveUp;
+  if (state.gaveUp) { try { state.answer = (await engine.giveup(ctx())).answer; } catch {} }
 }
 
 function addGuess(g) {
@@ -263,6 +365,7 @@ function render(flash) {
   const rows = $("rows");
   rows.replaceChildren();
   const list = [...state.guesses.values()].sort((a, b) => b.similarity - a.similarity);
+  const over = state.solved || state.gaveUp;
   if (!list.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
@@ -270,7 +373,7 @@ function render(flash) {
     td.textContent = "떠오르는 명사를 아무거나 넣어 보세요. 유사도가 높을수록 정답에 가까워요.";
     tr.append(td); rows.append(tr);
   } else {
-    const latest = !(state.solved || state.gaveUp) && state.latest && state.guesses.get(state.latest);
+    const latest = !over && state.latest && state.guesses.get(state.latest);
     if (latest) {
       rows.append(row(latest, "latest" + (flash ? " flash" : "")));
       const gap = document.createElement("tr"); gap.className = "gap";
@@ -280,7 +383,6 @@ function render(flash) {
   }
   $("count").textContent = list.length ? `${list.length}번 추측했어요` : "";
 
-  const over = state.solved || state.gaveUp;
   $("done").classList.toggle("on", over);
   $("giveup").hidden = over || !list.length;
   $("word").disabled = over; $("go").disabled = over;
@@ -297,56 +399,52 @@ function render(flash) {
 
 /* ---------- 동작 ---------- */
 async function loadHint() {
-  $("hint").textContent = "";
   try {
-    const h = await api(`${base()}/hint`);
-    const far = h[`rank${TOP_N}`];
-    $("hint").innerHTML = "";
-    $("hint").append(
-      "가장 가까운 단어의 유사도는 ", Object.assign(document.createElement("b"), { textContent: h.rank1.toFixed(2) }),
-      ", 10번째는 ", Object.assign(document.createElement("b"), { textContent: h.rank10.toFixed(2) }),
-      `, ${TOP_N}번째는 `, Object.assign(document.createElement("b"), { textContent: far.toFixed(2) }), "예요."
+    const h = await engine.hint(ctx());
+    const b = (v) => Object.assign(document.createElement("b"), { textContent: v.toFixed(2) });
+    $("hint").replaceChildren(
+      "가장 가까운 단어의 유사도는 ", b(h.rank1), ", 10번째는 ", b(h.rank10),
+      `, ${TOP_N}번째는 `, b(h[`rank${TOP_N}`]), "예요."
     );
     return h;
   } catch (e) { $("msg").textContent = e.message; }
 }
 
-async function startDaily() {
+function reset(mode, sid) {
   stopPoll();
-  state = { ...state, mode: "daily", sid: null, guesses: new Map(), latest: null, solved: false, gaveUp: false, answer: null };
+  state = { ...state, mode, sid, guesses: new Map(), latest: null, solved: false, gaveUp: false, answer: null };
+  $("topList").replaceChildren();
+}
+
+async function startDaily() {
+  reset("daily", null);
   const h = await loadHint();
   state.date = h && h.date;
-  const saved = state.date && store.get(dailyKey());
-  if (saved) {
-    saved.guesses.forEach(addGuess);
-    state.solved = saved.solved; state.gaveUp = saved.gaveUp;
-    if (state.gaveUp) { try { state.answer = (await api(`${base()}/giveup`)).answer; } catch {} }
-  }
+  if (state.date) await restore();
   render();
 }
 
 async function startSession(sid) {
-  stopPoll();
   $("msg").textContent = "";
   try {
-    if (!sid) sid = (await api("/api/session", { method: "POST" })).session_id;
-    state = { ...state, mode: "session", sid, guesses: new Map(), latest: null, solved: false, gaveUp: false, answer: null };
-    await syncSession();
+    if (!sid) sid = await engine.newSession();
+    reset("session", sid);
+    if (engine.shared) await syncSession(); else await restore();
     store.set("nountle:sid", sid);
     $("code").textContent = sid;
     await loadHint();
     render();
-    pollTimer = setInterval(syncSession, 4000);
+    if (engine.shared) pollTimer = setInterval(() => syncSession().catch(() => {}), 4000);
   } catch (e) {
     $("msg").textContent = e.message;
-    if (sid) { store.set("nountle:sid", null); }
+    store.set("nountle:sid", null);
     throw e;
   }
 }
 
 async function syncSession() {
-  if (state.mode !== "session") return;
-  const { guesses } = await api(`${base()}/guesses`);
+  if (state.mode !== "session" || !engine.shared) return;
+  const guesses = await engine.sessionGuesses(ctx());
   const before = state.guesses.size;
   guesses.forEach(addGuess);
   if (state.guesses.size !== before) render();
@@ -365,10 +463,10 @@ async function guess(word) {
   }
   $("go").disabled = true;
   try {
-    const g = await api(`${base()}/guess?word=${encodeURIComponent(word)}`);
+    const g = await engine.guess(ctx(), word);
     addGuess(g);
     state.latest = g.word;
-    saveDaily();
+    save();
     render(true);
     $("word").value = "";
   } catch (e) {
@@ -383,7 +481,7 @@ async function showTop() {
   const top = $("top");
   if (top.classList.toggle("on") && !$("topList").children.length) {
     try {
-      const data = await api(`${base()}/giveup`);
+      const data = await engine.giveup(ctx());
       $("topList").replaceChildren(...data.top.map((t) => {
         const li = document.createElement("li");
         li.textContent = t.word;
@@ -399,13 +497,13 @@ $("guess").addEventListener("submit", (e) => { e.preventDefault(); guess($("word
 $("giveup").addEventListener("click", async () => {
   if (!confirm("포기하면 정답이 공개돼요. 포기할까요?")) return;
   try {
-    const data = await api(`${base()}/giveup`);
+    const data = await engine.giveup(ctx());
     state.gaveUp = true; state.answer = data.answer;
-    saveDaily(); render();
+    save(); render();
   } catch (e) { $("msg").textContent = e.message; }
 });
 $("showTop").addEventListener("click", showTop);
-$("new").addEventListener("click", () => { $("topList").replaceChildren(); startSession(); });
+$("new").addEventListener("click", () => startSession().catch(() => {}));
 $("copy").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(state.sid); $("msg").textContent = "참여 코드를 복사했어요."; }
   catch { $("msg").textContent = `참여 코드: ${state.sid}`; }
@@ -413,18 +511,24 @@ $("copy").addEventListener("click", async () => {
 $("join").addEventListener("submit", (e) => {
   e.preventDefault();
   const code = $("joinCode").value.trim();
-  if (code) { $("topList").replaceChildren(); startSession(code).then(() => { $("joinCode").value = ""; }, () => {}); }
+  if (code) startSession(code).then(() => { $("joinCode").value = ""; }, () => {});
 });
 document.querySelectorAll(".modes button").forEach((b) => b.addEventListener("click", async () => {
-  if (b.dataset.mode === state.mode) return;
+  if (!engine || b.dataset.mode === state.mode) return;
   document.querySelectorAll(".modes button").forEach((x) => x.setAttribute("aria-selected", x === b));
   $("session").classList.toggle("on", b.dataset.mode === "session");
-  $("topList").replaceChildren(); $("msg").textContent = "";
+  $("msg").textContent = "";
   if (b.dataset.mode === "daily") startDaily();
-  else startSession(store.get("nountle:sid")).catch(() => startSession());
+  else startSession(store.get("nountle:sid")).catch(() => startSession().catch(() => {}));
 }));
 
-startDaily();
+(async () => {
+  engine = await pickEngine();
+  $("sessionNote").textContent = engine.shared
+    ? "코드를 보내면 친구와 추측 목록을 함께 봐요."
+    : "같은 코드를 넣으면 같은 문제가 나와요.";
+  startDaily();
+})();
 </script>
 </body>
 </html>
