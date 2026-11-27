@@ -67,6 +67,9 @@ jobs:
             --salt "${{ secrets.DAILY_SALT || github.repository }}"
           touch site/.nojekyll
 
+      - name: Check compression quality
+        run: python eval_compression.py --data data --max-nouns "$MAX_NOUNS" --dims 128 200 300
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
