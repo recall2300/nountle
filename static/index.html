@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>명사맨틀</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='30' height='30' fill='%23fff' stroke='%233E7A5A' stroke-width='2'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%2320283A'%3E%EB%AA%85%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -102,7 +102,20 @@
     background: var(--grid-strong); color: #fff; font-weight: 600; min-height: 44px;
   }
   .go:disabled { opacity: .5; cursor: default; }
-  .msg { min-height: 1.6em; margin: 8px 0 4px; font-size: 14px; color: var(--pen); }
+  .msg { min-height: 1.5em; margin: 6px 0 2px; font-size: 14px; color: var(--pen); }
+
+  /* 입력칸 + 방금 넣은 단어: 스크롤해도 화면 위에 붙어 있음 (키보드에 안 가려지게) */
+  .dock {
+    position: sticky; top: 0; z-index: 5;
+    background: var(--paper);
+    margin: 0 -18px; padding: 10px 18px 4px;
+  }
+  .dock.stuck { box-shadow: 0 1px 0 var(--grid); }
+  .dock.over { position: static; box-shadow: none; }
+  .dock .letters { margin: 0 0 10px; }
+  table.last { margin-bottom: 6px; }
+  table.last td { background: #EEF5F0; border-bottom: 1px solid var(--grid-strong); }
+  table.last:empty { display: none; }
 
   /* 정답 배너 */
   .done { display: none; margin: 8px 0 16px; padding: 14px 16px; border-left: 3px solid var(--pen); background: var(--pen-soft); }
@@ -121,8 +134,6 @@
   th.s, td.s { width: 5.5em; text-align: right; }
   th.r, td.r { width: 38%; }
   td.w { font: 400 19px/1.3 var(--serif); }
-  tr.latest td { background: #EEF5F0; }
-  tr.latest + tr.gap td { height: 10px; padding: 0; border-bottom: 1px solid var(--grid-strong); }
   @keyframes flash { from { background: #D6E8DC; } to { background: transparent; } }
   tr.flash td { animation: flash .9s ease-out; }
 
@@ -153,6 +164,12 @@
   .top li { break-inside: avoid; }
   .top li span { color: var(--muted); font-size: 13px; margin-left: 4px; font-variant-numeric: tabular-nums; }
 
+  @media (max-width: 700px) {
+    main { padding-top: 18px; padding-bottom: 60vh; }
+    .title { font-size: 22px; margin-bottom: 14px; }
+    .modes { margin-bottom: 12px; }
+    .hint { font-size: 13px; margin-bottom: 4px; }
+  }
   @media (max-width: 420px) {
     th.r, td.r { width: 34%; }
     .rank .bar { display: none; }
@@ -182,14 +199,17 @@
   </div>
 
   <p class="hint" id="hint"></p>
+  <div id="sentinel"></div>
+  <div class="dock" id="dock">
   <div class="letters" id="letters" hidden></div>
-
   <form class="guess" id="guess">
     <input class="sheet" id="word" maxlength="8" placeholder="명사" autocomplete="off"
            autocapitalize="off" spellcheck="false" aria-label="추측할 명사">
     <button class="go" id="go" type="submit">추측</button>
   </form>
   <p class="msg" id="msg" role="status"></p>
+  <table class="last" aria-label="방금 넣은 단어"><tbody id="lastRow"></tbody></table>
+  </div>
 
   <section class="done" id="done">
     <p id="doneText"></p>
@@ -401,17 +421,14 @@ function render(flash) {
     td.textContent = "떠오르는 명사를 아무거나 넣어 보세요. 유사도가 높을수록 정답에 가까워요.";
     tr.append(td); rows.append(tr);
   } else {
-    const latest = !over && state.latest && state.guesses.get(state.latest);
-    if (latest) {
-      rows.append(row(latest, "latest" + (flash ? " flash" : "")));
-      const gap = document.createElement("tr"); gap.className = "gap";
-      gap.innerHTML = '<td colspan="4"></td>'; rows.append(gap);
-    }
     list.forEach((g) => rows.append(row(g)));
   }
+  const latest = !over && state.latest && state.guesses.get(state.latest);
+  $("lastRow").replaceChildren(...(latest ? [row(latest, flash ? "flash" : "")] : []));
   $("count").textContent = list.length ? `${list.length}번 추측했어요` : "";
 
   $("done").classList.toggle("on", over);
+  $("dock").classList.toggle("over", over);
   $("giveup").hidden = over || !list.length;
   $("word").disabled = over; $("go").disabled = over;
   if (over) {
@@ -552,6 +569,20 @@ async function showTop() {
 
 /* ---------- 이벤트 ---------- */
 $("guess").addEventListener("submit", (e) => { e.preventDefault(); guess($("word").value); });
+
+const narrow = matchMedia("(max-width: 700px)");
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+function dockToTop() {
+  if (!narrow.matches) return;
+  const top = $("sentinel").getBoundingClientRect().top + window.scrollY;
+  if (window.scrollY < top - 2) window.scrollTo({ top, behavior: calm.matches ? "auto" : "smooth" });
+}
+$("word").addEventListener("focus", () => setTimeout(dockToTop, 300));
+if (window.visualViewport) visualViewport.addEventListener("resize", () => {
+  if (document.activeElement === $("word")) dockToTop();
+});
+new IntersectionObserver(([e]) => $("dock").classList.toggle("stuck", !e.isIntersecting))
+  .observe($("sentinel"));
 $("giveup").addEventListener("click", async () => {
   if (!confirm("포기하면 정답이 공개돼요. 포기할까요?")) return;
   try {
